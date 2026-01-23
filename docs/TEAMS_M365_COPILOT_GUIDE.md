@@ -25,7 +25,98 @@ The **WeatherAgent** is now published in Azure AI Foundry and can be integrated 
 
 ## Integration Options
 
-### 1. Microsoft Teams Integration
+### 1. Agent365 (Digital Worker Platform)
+
+**Agent365** is Microsoft's enterprise digital worker platform that provides native integration with Azure AI Foundry agents. It's designed for organizations deploying AI agents at scale across the Microsoft 365 ecosystem.
+
+#### What is Agent365?
+
+Agent365 transforms your published Foundry agents into **digital workers** that can:
+- Work alongside users in Microsoft 365 applications
+- Maintain persistent identity and audit trails
+- Operate with governed access and compliance
+- Scale across your organization with centralized management
+
+#### Prerequisites for Agent365
+
+- **Frontier Preview Program** access (contact Microsoft for enrollment)
+- **Hosted Agent** deployment (requires Docker & Azure Container Registry)
+- **Azure Developer CLI** installed
+- **.NET 9.0 SDK** or later
+- **Admin approval** in Microsoft 365 Admin Center
+
+#### Publishing to Agent365
+
+Your WeatherAgent can be deployed to Agent365 as a **digital worker**:
+
+1. **Create a Hosted Agent Version**
+   - Convert your prompt agent to a hosted agent
+   - Package as Docker container
+   - Deploy to Azure Container Registry
+
+2. **Configure Agent Application**
+   - Create application with stable endpoint
+   - Configure Azure Bot Service relay
+   - Set up identity and RBAC permissions
+
+3. **Publish as Digital Worker**
+   - Mark agent as "digital worker" in metadata
+   - Submit to Microsoft 365 Admin Center for approval
+   - Wait for admin to approve and enable
+
+4. **Access in Agent365**
+   - Users find agent under "Digital Workers"
+   - Available across all Microsoft 365 apps
+   - Persistent identity and cross-app memory
+
+#### Agent365 vs. Standard Publishing
+
+| Feature | Standard M365 Publishing | Agent365 |
+|---------|-------------------------|----------|
+| **Agent Type** | Prompt agents (simple) | Hosted agents (containerized) |
+| **Identity** | Application identity | Digital worker identity |
+| **Persistence** | Conversation-based | Cross-application memory |
+| **Deployment** | Serverless | Container-based |
+| **Management** | Per-application | Centralized digital workforce |
+| **Use Cases** | Simple Q&A, lookups | Complex workflows, multi-app tasks |
+
+#### When to Use Agent365
+
+✅ **Use Agent365 when:**
+- Agent needs to work across multiple M365 apps with shared context
+- Requires persistent memory and user history
+- Part of enterprise digital workforce strategy
+- Complex business processes requiring containerized logic
+
+❌ **Use standard publishing when:**
+- Simple query/response patterns (like WeatherAgent)
+- No need for cross-application state
+- Faster deployment preferred
+- Lightweight agents without custom infrastructure
+
+#### Example: WeatherAgent in Agent365
+
+If published to Agent365, WeatherAgent would become a **digital worker** that:
+- Remembers user's preferred cities across all M365 apps
+- Proactively suggests weather checks before calendar events
+- Integrates with Outlook for meeting location weather
+- Maintains weather preferences in user profile
+
+**Note**: The current WeatherAgent is published as a standard application, not a hosted agent in Agent365. To deploy to Agent365, you would need to:
+1. Containerize the agent code
+2. Create a hosted agent deployment
+3. Configure as digital worker
+4. Follow the Agent365 publishing workflow
+
+#### Resources
+
+- [Agent365 Documentation](https://learn.microsoft.com/azure/ai-foundry/agents/how-to/agent-365)
+- [Hosted Agents Guide](https://learn.microsoft.com/azure/ai-foundry/agents/)
+- [Digital Workers Blog](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/publishing-agents-from-microsoft-foundry-to-microsoft-365-copilot--teams/4471184)
+
+---
+
+### 2. Microsoft Teams Integration
 
 #### Accessing the Agent in Teams
 
@@ -57,6 +148,8 @@ WeatherAgent: In Tokyo right now, it's 18°C (64°F) with clear skies.
 The humidity is 45%, and the wind is calm at 5 km/h. 
 Perfect weather for outdoor activities! ☀️
 ```
+
+---
 
 ### 2. Microsoft 365 Copilot Integration
 
