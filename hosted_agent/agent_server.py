@@ -8,6 +8,8 @@ processes them using the Azure AI Foundry agent, and returns responses.
 import asyncio
 import logging
 import sys
+import time
+import uuid
 from aiohttp import web
 import aiohttp_cors
 
@@ -69,6 +71,70 @@ async def handle_messages(request: web.Request) -> web.Response:
         )
 
 
+async def handle_responses(request: web.Request) -> web.Response:
+    """
+    Handle incoming Responses API requests.
+
+    POST /responses
+    """
+    try:
+        payload = await request.json()
+
+        # Extract user message from payload
+        user_message = ""
+        user_id = "unknown"
+        input_data = payload.get("input")
+
+        if isinstance(input_data, str):
+            user_message = input_data
+        elif isinstance(input_data, list) and input_data:
+            first_item = input_data[0]
+            if isinstance(first_item, dict):
+                user_id = first_item.get("role", "user")
+                content = first_item.get("content")
+                if isinstance(content, str):
+                    user_message = content
+                elif isinstance(content, list) and content:
+                    first_part = content[0]
+                    if isinstance(first_part, dict):
+                        user_message = first_part.get("text", "")
+
+        if not user_message:
+            user_message = payload.get("text", "")
+
+        logger.info(f"Received /responses input: {user_message}")
+
+        reply_text = await activity_handler.generate_reply(user_message, user_id)
+
+        response_body = {
+            "id": f"resp_{uuid.uuid4().hex}",
+            "object": "response",
+            "created": int(time.time()),
+            "status": "completed",
+            "output": [
+                {
+                    "id": f"msg_{uuid.uuid4().hex}",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": reply_text,
+                        }
+                    ],
+                }
+            ],
+        }
+
+        return web.json_response(response_body, status=200)
+    except Exception as e:
+        logger.error(f"Error handling /responses: {e}", exc_info=True)
+        return web.json_response(
+            {"error": str(e)},
+            status=500
+        )
+
+
 async def health_check(request: web.Request) -> web.Response:
     """
     Health check endpoint.
@@ -97,6 +163,7 @@ async def root_handler(request: web.Request) -> web.Response:
         "type": "hosted_agent",
         "endpoints": {
             "messages": "/api/messages",
+            "responses": "/responses",
             "health": "/health"
         },
         "status": "running"
@@ -137,6 +204,7 @@ def create_app() -> web.Application:
     app.router.add_get("/", root_handler)
     app.router.add_get("/health", health_check)
     app.router.add_post("/api/messages", handle_messages)
+    app.router.add_post("/responses", handle_responses)
     
     # Configure CORS on all routes
     for route in list(app.router.routes()):

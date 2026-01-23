@@ -84,11 +84,17 @@ cd hosted_agent
 
 ### 2. Test Locally
 
+See [LOCAL_TESTING.md](LOCAL_TESTING.md) for comprehensive testing guide.
+
+Quick test:
 ```bash
-docker run -p 8080:8080 \
-  -e OPENWEATHER_API_KEY=your_key_here \
-  -e AZURE_AI_PROJECT_ENDPOINT=your_endpoint \
-  weatheragent:latest
+# Option 1: Test weather function only (no Docker, no Azure)
+python test_local.py
+
+# Option 2: Full container test with service principal
+./setup-local-auth.sh  # Creates service principal and .env file
+docker run -d -p 8080:8080 --env-file .env --name weatheragent-test weatheragent:latest
+curl http://localhost:8080/health
 ```
 
 ### 3. Deploy to Azure

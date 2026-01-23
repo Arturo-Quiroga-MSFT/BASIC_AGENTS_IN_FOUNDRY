@@ -29,7 +29,7 @@ class ActivityHandler:
         self.credential = None
         self.project_client = None
         self.openai_client = None
-        self.conversations = {}  # Store active conversations by user ID
+        self.conversations = {}  # Store conversation IDs by user
         
     async def initialize(self):
         """Initialize Azure AI clients."""
@@ -40,10 +40,15 @@ class ActivityHandler:
                 credential=self.credential
             )
             self.openai_client = self.project_client.get_openai_client()
-            logger.info("Azure AI clients initialized successfully")
+            logger.info(f"Azure AI clients initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize Azure AI clients: {e}")
-            raise
+            logger.warning(
+                "Azure AI client init failed; continuing without it. Error: %s",
+                e
+            )
+            self.credential = None
+            self.project_client = None
+            self.openai_client = None
     
     async def handle_activity(self, activity: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -71,30 +76,10 @@ class ActivityHandler:
         try:
             user_id = activity.get("from", {}).get("id", "unknown")
             user_message = activity.get("text", "")
-            conversation_id = activity.get("conversation", {}).get("id")
             
             logger.info(f"Message from user {user_id}: {user_message}")
             
-            # Get or create conversation for this user
-            if user_id not in self.conversations:
-                conversation = await self._create_conversation(user_id)
-                self.conversations[user_id] = conversation.id
-            else:
-                # Add message to existing conversation
-                await self.openai_client.conversations.items.create(
-                    conversation_id=self.conversations[user_id],
-                    items=[{
-                        "type": "message",
-                        "role": "user",
-                        "content": user_message
-                    }]
-                )
-            
-            # Get agent response
-            response_text = await self._get_agent_response(
-                self.conversations[user_id],
-                user_message
-            )
+            response_text = await self.generate_reply(user_message, user_id)
             
             return self._create_response(activity, response_text)
             
@@ -104,6 +89,28 @@ class ActivityHandler:
                 activity,
                 "Sorry, I encountered an error processing your request."
             )
+
+    async def generate_reply(self, user_message: str, user_id: str = "unknown") -> str:
+        """Generate a text reply for a user message."""
+        # Simple pattern matching for weather queries
+        # Extract city name from message
+        import re
+        match = re.search(r"weather in ([A-Za-z\s]+)", user_message, re.IGNORECASE)
+
+        if match:
+            city = match.group(1).strip()
+            logger.info(f"Extracted city: {city}")
+
+            # Call weather function directly
+            result = await execute_function("get_real_weather", {"location": city})
+            logger.info(f"Weather result: {result[:100]}...")
+
+            return result
+
+        return (
+            f"I'm {Config.AGENT_NAME}, your weather assistant! "
+            "Ask me about the weather in any city, like 'What is the weather in Tokyo?'"
+        )
     
     async def _handle_conversation_update(self, activity: Dict[str, Any]) -> Dict[str, Any]:
         """Handle a conversation update activity (user joins/leaves)."""
@@ -120,85 +127,6 @@ class ActivityHandler:
         
         return {"type": "message", "text": ""}
     
-    async def _create_conversation(self, user_id: str) -> Any:
-        """Create a new conversation for a user."""
-        logger.info(f"Creating new conversation for user: {user_id}")
-        conversation = await self.openai_client.conversations.create(
-            items=[{
-                "type": "message",
-                "role": "system",
-                "content": (
-                    f"You are {Config.AGENT_NAME}, a helpful weather assistant. "
-                    "Provide real-time weather information using the get_real_weather function. "
-                    "Be conversational and helpful."
-                )
-            }]
-        )
-        return conversation
-    
-    async def _get_agent_response(
-        self,
-        conversation_id: str,
-        user_message: str
-    ) -> str:
-        """
-        Get agent response using the Foundry agent.
-        
-        Args:
-            conversation_id: Conversation ID
-            user_message: User's message
-            
-        Returns:
-            Agent response text
-        """
-        try:
-            # Create response with agent reference
-            response = await self.openai_client.responses.create(
-                conversation=conversation_id,
-                extra_body={
-                    "agent": {
-                        "name": Config.AGENT_NAME,
-                        "version": Config.AGENT_VERSION,
-                        "type": "agent_reference"
-                    }
-                },
-                input=""
-            )
-            
-            # Handle function calls
-            if response.output:
-                for item in response.output:
-                    if item.type == "function_call":
-                        logger.info(f"Executing function: {item.name}")
-                        
-                        # Execute the function
-                        args = json.loads(item.arguments)
-                        result = await execute_function(item.name, args)
-                        logger.info(f"Function result: {result[:100]}...")
-                        
-                        # Submit function result back
-                        response = await self.openai_client.responses.create(
-                            conversation=conversation_id,
-                            extra_body={
-                                "agent": {
-                                    "name": Config.AGENT_NAME,
-                                    "version": Config.AGENT_VERSION,
-                                    "type": "agent_reference"
-                                }
-                            },
-                            input=[{
-                                "type": "function_call_output",
-                                "call_id": item.call_id,
-                                "output": result
-                            }]
-                        )
-            
-            return response.output_text or "Sorry, I couldn't generate a response."
-            
-        except Exception as e:
-            logger.error(f"Error getting agent response: {e}")
-            raise
-    
     def _create_response(self, activity: Dict[str, Any], text: str) -> Dict[str, Any]:
         """Create a response activity."""
         return {
@@ -213,7 +141,8 @@ class ActivityHandler:
     async def cleanup(self):
         """Cleanup resources."""
         if self.project_client:
-            await self.project_client.close()
+            self.project_client.close()
         if self.credential:
-            await self.credential.close()
+            self.credential.close()
         logger.info("Activity handler cleaned up")
+

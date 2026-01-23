@@ -6,7 +6,7 @@ aiohttp-cors==0.7.0
 
 # Azure SDK
 azure-identity==1.15.0
-azure-ai-projects>=2.0.0b1
+azure-ai-projects>=2.0.0b2
 
 # Weather API
 httpx==0.26.0
