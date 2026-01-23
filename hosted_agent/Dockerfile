@@ -3,9 +3,11 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (including build tools for psutil)
 RUN apt-get update && apt-get install -y \
     curl \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -19,9 +21,6 @@ COPY agent_server.py .
 COPY activity_handler.py .
 COPY weather_functions.py .
 COPY config.py .
-
-# Copy weather tool utilities from parent directory
-COPY ../weather_tool/shared_utils.py ./weather_tool/
 
 # Set environment variables
 ENV PORT=8080
