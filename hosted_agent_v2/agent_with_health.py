@@ -1,7 +1,6 @@
 """
-WeatherAgent using Azure AI Agent Server Core package.
-Following official hosted agents pattern from:
-https://learn.microsoft.com/en-us/azure/ai-foundry/agents/concepts/hosted-agents
+WeatherAgent with health check endpoints for Azure readiness probes.
+This version adds /health and /ready endpoints required by Azure Container Instances.
 """
 
 import os
@@ -144,9 +143,41 @@ my_agent.agent_run = agent_run
 
 
 if __name__ == "__main__":
-    # IMPORTANT:
-    # FoundryCBAgent defaults to env var DEFAULT_AD_PORT (fallback 8088) and does NOT
-    # read the common platform env var PORT. Many hosted container platforms probe PORT.
-    # So we honor PORT first, then DEFAULT_AD_PORT, then 8088.
-    port_str = os.getenv("PORT") or os.getenv("DEFAULT_AD_PORT") or "8088"
-    my_agent.run(port=int(port_str))
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route, Mount
+    
+    # Create health check endpoints
+    async def health_check(request):
+        """Liveness probe - is the service running?"""
+        return JSONResponse({"status": "healthy"}, status_code=200)
+    
+    async def readiness_check(request):
+        """Readiness probe - is the service ready to accept requests?"""
+        api_key = os.getenv("OPENWEATHER_API_KEY")
+        if not api_key:
+            return JSONResponse({"status": "not ready", "reason": "API key missing"}, status_code=503)
+        return JSONResponse({"status": "ready"}, status_code=200)
+    
+    # Get the Starlette app from FoundryCBAgent
+    # The agent creates its own app with /responses endpoint
+    foundry_app = my_agent._create_app()
+    
+    # Create a new Starlette app that includes both health endpoints and Foundry routes
+    routes = [
+        Route("/health", health_check),
+        Route("/healthz", health_check),
+        Route("/ready", readiness_check),
+        Route("/readiness", readiness_check),
+        Mount("/", app=foundry_app),  # Mount all Foundry routes
+    ]
+    
+    app = Starlette(routes=routes)
+    
+    logger.info("✅ Health check endpoints added: /health, /healthz, /ready, /readiness")
+    logger.info("✅ Agent endpoints available: /responses")
+    
+    # Run the server on port 8088
+    port = int(os.getenv("PORT", "8088"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

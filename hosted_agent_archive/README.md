@@ -261,20 +261,153 @@ az monitor app-insights query \
 
 ## Troubleshooting
 
-**Container won't start:**
+### Common Issues and Solutions
+
+#### Container won't start:
 - Check environment variables
 - Review container logs: `docker logs <container-id>`
 - Verify network connectivity
 
-**Function execution fails:**
+#### Function execution fails:
 - Verify OPENWEATHER_API_KEY is valid
 - Check container has internet access
 - Review application logs
 
-**Bot Service 401 errors:**
+#### Bot Service 401 errors:
 - Verify application ID matches bot configuration
 - Check RBAC permissions
 - Ensure container is running and healthy
+
+---
+
+## Implementation Journey: Custom vs Official SDK
+
+### Initial Approach - Custom aiohttp Server (Failed in Azure)
+
+**What We Built:**
+- Custom aiohttp server implementing Activity Protocol and Responses API
+- Manual endpoint handling for `/responses`, `/api/messages`, `/health`
+- Custom activity handler with message parsing
+- Files: `agent_server.py`, `activity_handler.py`
+
+**Local Testing: ✅ SUCCESS**
+- Container started in 5 seconds
+- All endpoints functional
+- Weather queries working perfectly
+- Health checks passing
+
+**Azure Deployment: ❌ FAILED**
+- All deployments stuck in "Starting" status indefinitely (10+ minutes)
+- No clear error messages in portal
+- Multiple attempts with different configurations all failed:
+  - WeatherAgent through WeatherAgent5
+  - Different image versions (v2, v3, v4)
+  - Various endpoint configurations
+  - ACR permission fixes (AcrPull granted to both identities)
+
+**Key Findings:**
+- Custom server implementation works locally but Azure environment requires specific patterns
+- Preview service may have undocumented requirements
+- Official SDK provides necessary integration layer
+
+### Final Solution - Azure AI Agent Server Core (SUCCESS)
+
+**Migration to Official Pattern:**
+Switched to `azure-ai-agentserver-core` package with `FoundryCBAgent` class following Microsoft's official pattern from documentation.
+
+**New Implementation (hosted_agent_v2/):**
+```python
+from azure.ai.agentserver.core import FoundryCBAgent
+
+async def agent_run(request_body):
+    # Extract message from AgentRunContext
+    user_message = ""
+    if hasattr(request_body, 'request') and isinstance(request_body.request, dict):
+        messages = request_body.request.get('messages', [])
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get('role') == 'user':
+                user_message = msg.get('content', '')
+                break
+    
+    # Process weather query
+    # Return OpenAIResponse or stream events
+
+my_agent = FoundryCBAgent()
+my_agent.agent_run = agent_run
+my_agent.run()  # Runs on localhost:8088
+```
+
+**Critical Differences:**
+1. **Request Structure**: Custom server received raw HTTP requests; FoundryCBAgent provides `AgentRunContext` wrapper
+2. **Message Extraction**: Context has `request` property containing dict with `messages` array
+3. **Environment Loading**: Must explicitly call `load_dotenv()` before imports
+4. **Protocol Translation**: SDK handles Activity Protocol ↔ Responses API conversion automatically
+5. **OpenTelemetry**: Built-in tracing and diagnostics
+6. **Port**: Default 8088 (not 8080)
+
+**Troubleshooting Steps That Led to Success:**
+
+1. **Empty User Messages Issue:**
+   - **Problem**: `user_message` always empty despite correct curl payload
+   - **Debug**: Added logging to inspect `request_body` attributes
+   - **Root Cause**: Tried accessing non-existent `messages` attribute directly
+   - **Solution**: Access via `request_body.request` (dict) then extract from `messages` array
+
+2. **Weather API Key Not Found:**
+   - **Problem**: `os.getenv("OPENWEATHER_API_KEY")` returned None
+   - **Root Cause**: `.env` file existed but never loaded
+   - **Solution**: Added `from dotenv import load_dotenv` and `load_dotenv()` at module level
+
+3. **Request Context Understanding:**
+   - **Problem**: Confusion about data structure
+   - **Discovery Process**:
+     ```python
+     # Added debug logging:
+     logger.info(f"Request dir: {dir(request_body)}")
+     # Found: 'request', 'raw_payload', 'stream', 'response_id', etc.
+     
+     logger.info(f"Request object: {request_body.request}")
+     # Revealed: {'messages': [{'role': 'user', 'content': '...'}], 'model': '...', 'stream': False}
+     ```
+   - **Key Insight**: `AgentRunContext` wraps the actual request dict in the `request` property
+
+**Files for Official Implementation:**
+- `hosted_agent_v2/agent.py` - FoundryCBAgent with agent_run handler
+- `hosted_agent_v2/requirements.txt` - azure-ai-agentserver-core==1.0.0b8
+- `hosted_agent_v2/Dockerfile` - Standard Python 3.11-slim with port 8088
+- `hosted_agent_v2/.env` - Must include OPENWEATHER_API_KEY (loaded via dotenv)
+
+**Local Testing Success:**
+```bash
+# Terminal 1: Run agent
+cd hosted_agent_v2
+source ../.venv/bin/activate
+python agent.py
+# INFO: Uvicorn running on http://0.0.0.0:8088
+
+# Terminal 2: Test with curl
+curl -X POST http://localhost:8088/responses \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What is the weather in Mexico City?"}],"model":"weather-agent","stream":false}'
+
+# Response:
+{"metadata":{},"temperature":0.0,"top_p":0.0,"user":"user","id":"resp_...","created_at":...,"output":[{"status":"completed","content":[{"text":"Weather in Mexico City, MX: 20.5°C (69.0°F), broken clouds. Humidity: 26%","annotations":[],"type":"output_text"}],"type":"message","role":"assistant"}],"object":"response"}
+```
+
+**Key Takeaways:**
+
+1. **Use Official SDKs**: While custom implementations can work locally, Azure preview services may require specific SDK patterns
+2. **Debug Request Structure**: When data extraction fails, log the entire object structure to understand the wrapper layers
+3. **Environment Variables**: Always verify `.env` loading with `load_dotenv()` - don't assume it's automatic
+4. **Local First**: Thorough local testing reveals integration issues before expensive Azure deployments
+5. **Documentation Patterns**: Follow official Microsoft code samples for hosted agents, don't reinvent the protocol layer
+
+**Next: Azure Deployment with Official Pattern**
+- Build hosted_agent_v2 container
+- Deploy as WeatherAgent6 to test official SDK in Azure environment
+- Expectation: Should transition from "Starting" to "Running" status successfully
+
+---
 
 ## Resources
 
