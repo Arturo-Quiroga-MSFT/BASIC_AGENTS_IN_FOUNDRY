@@ -1,0 +1,18 @@
+# Core dependencies for Agent Framework hosted agent
+agent-framework
+agent-framework-azure-ai
+
+# Hosting adapter for Agent Framework
+azure-ai-agentserver-agentframework
+
+# Azure authentication
+azure-identity
+
+# Environment variable management
+python-dotenv
+
+# Azure AI Projects SDK (for deployment scripts)
+azure-ai-projects
+
+# HTTP requests for testing
+requests
