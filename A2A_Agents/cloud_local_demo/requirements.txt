@@ -1,0 +1,24 @@
+# Cloud ↔ Local A2A Demo — Python dependencies
+#
+# Server side (local_a2a_server.py):
+#   a2a-sdk          — A2A protocol server (from a2aproject/a2a-python)
+#   uvicorn          — ASGI server to host the Starlette app
+#   openai           — OpenAI client to talk to Foundry Local's API
+#   foundry-local-sdk — (optional) auto-starts Foundry Local runtime
+#
+# Client side (cloud_a2a_client.py):
+#   agent-framework-a2a — MAF Python A2A client (A2AAgent)
+#   httpx               — HTTP client for agent card resolution
+#
+
+# --- A2A Server ---
+a2a-sdk[http-server]>=0.3.20
+uvicorn>=0.30.0
+openai>=1.40.0
+
+# --- A2A Client (MAF) ---
+agent-framework-a2a --pre
+httpx>=0.27.0
+
+# --- Foundry Local (optional — install if available on your platform) ---
+# foundry-local-sdk
